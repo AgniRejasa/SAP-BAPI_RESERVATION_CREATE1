@@ -1,0 +1,208 @@
+Option Private Module
+Option Explicit
+Public bBerhenti As Boolean
+Dim Functions As Object
+Dim lFirstDataRow As Long, lDataRow As Long, lLastDataRow As Long, lLastDataColumn As Long
+Dim A, B, C, D, E, F, G, H, I, J, K, L, M, N, O, P, Q, R, S, T, U, V, W, X, Y, Z As String
+
+Sub Create_Reservation(ByVal control As IRibbonControl)
+    Dim BAPI_RESERVATION_CREATE1 As Object
+    Dim expResHdr
+    Dim impReservation
+    Dim tblResItms
+    Dim tblReturn
+    Dim BAPI_TRANSACTION_COMMIT As Object
+    Dim expWait
+    Dim impReturn
+    Dim shtReturnBaris As Long
+    Dim tblResItmsBaris As Long
+    Dim tblReturnBaris As Long
+
+    Connect_To_SAP_BAPI
+    Prepare_spreadsheet "Input", 2
+    Set BAPI_RESERVATION_CREATE1 = Functions.Add("BAPI_RESERVATION_CREATE1")  'buat local instance SAP BO PurchaseRequisition
+    Set expResHdr = BAPI_RESERVATION_CREATE1.Exports("RESERVATIONHEADER")
+    Set impReservation = BAPI_RESERVATION_CREATE1.Imports("RESERVATION")
+    Set tblResItms = BAPI_RESERVATION_CREATE1.tables("RESERVATIONITEMS")
+    Set tblReturn = BAPI_RESERVATION_CREATE1.tables("RETURN")
+
+    Set BAPI_TRANSACTION_COMMIT = Functions.Add("BAPI_TRANSACTION_COMMIT")
+    Set expWait = BAPI_TRANSACTION_COMMIT.Exports("WAIT")
+    Set impReturn = BAPI_TRANSACTION_COMMIT.Imports("RETURN")
+
+    frmProgress.Show
+
+    shtReturnBaris = 2
+    For lDataRow = lDataRow To lLastDataRow
+        Read_Spreadsheet ("Input")
+        expResHdr.Value(2) = Sheets("Input").Cells(lDataRow, 2) 'user
+        expResHdr.Value(3) = Sheets("Input").Cells(lDataRow, 3) 'movement type
+        expResHdr.Value(4) = Sheets("Input").Cells(lDataRow, 4) 'cost center
+        expResHdr.Value(30) = Sheets("Input").Cells(lDataRow, 5) 'wbs element
+        tblResItmsBaris = 1
+        Do
+            tblResItms.AppendRow
+            tblResItms(tblResItmsBaris, "MATERIAL") = Sheets("Input").Cells(lDataRow, 6)
+            tblResItms(tblResItmsBaris, "PLANT") = Sheets("Input").Cells(lDataRow, 7)
+            tblResItms(tblResItmsBaris, "STGE_LOC") = Sheets("Input").Cells(lDataRow, 8)
+            tblResItms(tblResItmsBaris, "ENTRY_QNT") = Sheets("Input").Cells(lDataRow, 9)
+            tblResItms(tblResItmsBaris, "REQ_DATE") = Sheets("Input").Cells(lDataRow, 10)
+            tblResItms(tblResItmsBaris, "GR_RCPT") = Sheets("Input").Cells(lDataRow, 11)
+            tblResItms(tblResItmsBaris, "UNLOAD_PT") = Sheets("Input").Cells(lDataRow, 12)
+            tblResItms(tblResItmsBaris, "MOVEMENT") = Sheets("Input").Cells(lDataRow, 13)
+            tblResItmsBaris = tblResItmsBaris + 1
+            lDataRow = lDataRow + 1
+        Loop While Sheets("Input").Cells(lDataRow, 1) = Sheets("Input").Cells(lDataRow - 1, 1)
+        lDataRow = lDataRow - 1
+        expWait.Value = "X"
+    
+        If BAPI_RESERVATION_CREATE1.call = True Then
+            If tblReturn.RowCount > 0 Then
+                For tblReturnBaris = 1 To tblReturn.RowCount
+                    Sheets("Return").Cells(shtReturnBaris, 1) = Sheets("Input").Cells(lDataRow, 1)
+                    Sheets("Return").Cells(shtReturnBaris, 2) = impReservation.Value
+                    Sheets("Return").Cells(shtReturnBaris, 3) = tblReturn(tblReturnBaris, "TYPE")
+                    Sheets("Return").Cells(shtReturnBaris, 4) = tblReturn(tblReturnBaris, "ID")
+                    Sheets("Return").Cells(shtReturnBaris, 5) = tblReturn(tblReturnBaris, "NUMBER")
+                    Sheets("Return").Cells(shtReturnBaris, 6) = tblReturn(tblReturnBaris, "MESSAGE")
+                    Sheets("Return").Cells(shtReturnBaris, 7) = tblReturn(tblReturnBaris, "LOG_NO")
+                    Sheets("Return").Cells(shtReturnBaris, 8) = tblReturn(tblReturnBaris, "LOG_MSG_NO")
+                    Sheets("Return").Cells(shtReturnBaris, 9) = tblReturn(tblReturnBaris, "MESSAGE_V1")
+                    Sheets("Return").Cells(shtReturnBaris, 10) = tblReturn(tblReturnBaris, "MESSAGE_V2")
+                    Sheets("Return").Cells(shtReturnBaris, 11) = tblReturn(tblReturnBaris, "MESSAGE_V3")
+                    Sheets("Return").Cells(shtReturnBaris, 12) = tblReturn(tblReturnBaris, "MESSAGE_V4")
+                    Sheets("Return").Cells(shtReturnBaris, 13) = tblReturn(tblReturnBaris, "PARAMETER")
+                    Sheets("Return").Cells(shtReturnBaris, 14) = tblReturn(tblReturnBaris, "ROW")
+                    Sheets("Return").Cells(shtReturnBaris, 15) = tblReturn(tblReturnBaris, "FIELD")
+                    Sheets("Return").Cells(shtReturnBaris, 16) = tblReturn(tblReturnBaris, "SYSTEM")
+                    shtReturnBaris = shtReturnBaris + 1
+                Next tblReturnBaris
+            End If
+            If tblReturn(1, "TYPE") <> "E" Then
+                If BAPI_TRANSACTION_COMMIT.call = True Then
+                    Sheets("Input").Cells(lDataRow, 14) = impReservation.Value
+                End If
+            End If
+        End If
+        Update_Status "Input", 0
+        tblResItms.Rows.RemoveAll
+        
+        frmProgress.progress_indicator_update ((lDataRow - lFirstDataRow + 1) / (lLastDataRow - lFirstDataRow + 1))
+        If bBerhenti = True Then lDataRow = frmProgress.Stop_Macro(lFirstDataRow, lDataRow, lLastDataRow)
+    Next lDataRow
+
+    'bebaskan BO
+    Set BAPI_RESERVATION_CREATE1 = Nothing
+    Set BAPI_TRANSACTION_COMMIT = Nothing
+
+    Functions.Connection.Logoff
+    Sheets("Input").Activate
+    frmProgress.Hide 'sembunyikan form progress
+    Unload frmProgress 'matikan form progress
+    Application.WindowState = xlMaximized 'maximize excel window
+    MsgBox "Selesai"
+End Sub
+
+Private Sub Update_Status(namaSheet As String, PosisiLog As Integer)
+    Dim rngStatus As Range
+    Dim iBaris As Integer
+    
+    Set rngStatus = Sheets(namaSheet).Cells(lDataRow, lLastDataColumn + 2 + PosisiLog)
+    iBaris = rngStatus.Row
+    Do While Range("A" & iBaris - 1) = Range("A" & iBaris)
+        rngStatus.Offset(-1, 0) = rngStatus
+        iBaris = iBaris - 1
+        Set rngStatus = rngStatus.Offset(-1, 0)
+    Loop
+End Sub
+
+Private Sub Read_Spreadsheet(namaSheet As String)
+    A = Trim(Sheets(namaSheet).Cells(lDataRow, 1))
+    B = Trim(Sheets(namaSheet).Cells(lDataRow, 2))
+    C = Trim(Sheets(namaSheet).Cells(lDataRow, 3))
+    D = Trim(Sheets(namaSheet).Cells(lDataRow, 4))
+    E = Trim(Sheets(namaSheet).Cells(lDataRow, 5))
+    F = Trim(Sheets(namaSheet).Cells(lDataRow, 6))
+    G = Trim(Sheets(namaSheet).Cells(lDataRow, 7))
+    H = Trim(Sheets(namaSheet).Cells(lDataRow, 8))
+    I = Trim(Sheets(namaSheet).Cells(lDataRow, 9))
+    J = Trim(Sheets(namaSheet).Cells(lDataRow, 10))
+    K = Trim(Sheets(namaSheet).Cells(lDataRow, 11))
+    L = Trim(Sheets(namaSheet).Cells(lDataRow, 12))
+    M = Trim(Sheets(namaSheet).Cells(lDataRow, 13))
+    N = Trim(Sheets(namaSheet).Cells(lDataRow, 14))
+    O = Trim(Sheets(namaSheet).Cells(lDataRow, 15))
+    P = Trim(Sheets(namaSheet).Cells(lDataRow, 16))
+    Q = Trim(Sheets(namaSheet).Cells(lDataRow, 17))
+    R = Trim(Sheets(namaSheet).Cells(lDataRow, 18))
+    S = Trim(Sheets(namaSheet).Cells(lDataRow, 19))
+    T = Trim(Sheets(namaSheet).Cells(lDataRow, 20))
+    U = Trim(Sheets(namaSheet).Cells(lDataRow, 21))
+    V = Trim(Sheets(namaSheet).Cells(lDataRow, 22))
+    W = Trim(Sheets(namaSheet).Cells(lDataRow, 23))
+    X = Trim(Sheets(namaSheet).Cells(lDataRow, 24))
+    Y = Trim(Sheets(namaSheet).Cells(lDataRow, 25))
+    Z = Trim(Sheets(namaSheet).Cells(lDataRow, 26))
+End Sub
+
+Private Sub Prepare_spreadsheet(namaSheet As String, awalBarisData As Long)
+    Sheets(namaSheet).Activate
+    lLastDataRow = Sheets(namaSheet).Cells(awalBarisData - 1, 1).End(xlDown).Row
+    lLastDataColumn = Sheets(namaSheet).Cells(awalBarisData - 1, 1).End(xlToRight).Column
+    
+    Sheets(namaSheet).Unprotect
+    Sheets(namaSheet).Range(Cells(awalBarisData, lLastDataColumn + 2), Cells(awalBarisData, lLastDataColumn + 2).SpecialCells(xlCellTypeLastCell)).ClearContents
+
+    Sheets(namaSheet).Cells(awalBarisData - 1, 1).Select
+    Sheets(namaSheet).Protect DrawingObjects:=True, Contents:=True, Scenarios:=True _
+        , AllowFormattingCells:=True, AllowFormattingColumns:=True, _
+        AllowFormattingRows:=True, AllowInsertingColumns:=True, AllowInsertingRows _
+        :=True, AllowDeletingColumns:=True, AllowDeletingRows:=True, AllowSorting _
+        :=True, AllowFiltering:=True
+        
+    lFirstDataRow = awalBarisData
+    lDataRow = awalBarisData
+End Sub
+
+Private Sub Connect_To_SAP_BAPI()
+    Set Functions = CreateObject("SAP.Functions")   'buat BAPI Active X control
+    'informasi logon
+    
+'    Functions.Connection.ApplicationServer = ""
+'    Functions.Connection.SystemNumber = ""
+
+    Functions.Connection.Destination = ""
+    Functions.Connection.System = ""
+    Functions.Connection.Client = ""
+    Functions.Connection.User = "" 'masukkan user ID SAP
+    Functions.Connection.Password = "" 'masukkan password
+    Functions.Connection.Language = "EN"
+
+'    Functions.Connection.Destination = ""
+'    Functions.Connection.System = ""
+'    Functions.Connection.Client = ""
+'    Functions.Connection.User = "" 'masukkan user ID SAP
+'    Functions.Connection.Password = "" 'masukkan password
+'    Functions.Connection.Language = "EN"
+
+'    Functions.Connection.SystemID = ""
+'    Functions.Connection.GatewayHost = ""
+'    Functions.Connection.SystemNumber = ""
+'    Functions.Connection.GroupName = ""
+'    Functions.Connection.MessageServer = ""
+'    Functions.Connection.HostName = ""
+'    Functions.Connection.UseSAPLogonIni = False
+
+'    Functions.Connection.Destination = ""
+'    Functions.Connection.System = ""
+'    Functions.Connection.Client = ""
+'    Functions.Connection.User = "" 'masukkan user ID SAP
+'    Functions.Connection.Password = "" 'masukkan password
+'    Functions.Connection.Language = "EN"
+
+    If Functions.Connection.Logon(0, False) = False Then 'logon dengan non silent mode
+        MsgBox "Tidak bisa terhubung ke SAP server"
+        End
+    End If
+End Sub
+
